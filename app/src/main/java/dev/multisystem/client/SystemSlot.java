@@ -5,18 +5,20 @@ final class SystemSlot {
     final String name;
     final String version;
     final String state;
+    final String partitions;
     final long sizeBytes;
     final boolean active;
     final boolean selected;
     final boolean bootable;
     final boolean dataIsolated;
 
-    SystemSlot(String id, String name, String version, String state, long sizeBytes,
+    SystemSlot(String id, String name, String version, String state, String partitions, long sizeBytes,
                boolean active, boolean selected, boolean bootable, boolean dataIsolated) {
         this.id = id;
         this.name = name;
         this.version = version;
         this.state = state;
+        this.partitions = partitions;
         this.sizeBytes = sizeBytes;
         this.active = active;
         this.selected = selected;

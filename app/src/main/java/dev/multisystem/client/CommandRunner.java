@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
-final class CommandRunner {
+class CommandRunner {
     static final class Result {
         final int exitCode;
         final String output;
@@ -52,57 +52,58 @@ final class CommandRunner {
     }
 
     private static Result execute(String command, InputStream input, long timeout,
-                                  TimeUnit timeoutUnit, ProgressListener listener) throws Exception {
+                                   TimeUnit timeoutUnit, ProgressListener listener) throws Exception {
         Process process = new ProcessBuilder("su", "-c", command)
                 .redirectErrorStream(true).start();
         FutureTask<String> reader = new FutureTask<>(() -> readLimited(process.getInputStream()));
         Thread thread = new Thread(reader, "root-command-output");
         thread.setDaemon(true);
         thread.start();
-
-        long sent = 0;
-        byte[] buffer = new byte[256 * 1024];
-        java.io.IOException streamFailure = null;
-        try (OutputStream output = process.getOutputStream()) {
-            if (input != null) {
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    output.write(buffer, 0, count);
-                    sent += count;
-                    if (listener != null) listener.onProgress(sent, -1L);
+        FutureTask<Void> writer = new FutureTask<>(() -> {
+            try (InputStream source = input; OutputStream output = process.getOutputStream()) {
+                if (source != null) {
+                    long sent = 0;
+                    byte[] buffer = new byte[256 * 1024];
+                    int count;
+                    while ((count = source.read(buffer)) != -1) {
+                        if (Thread.currentThread().isInterrupted()) throw new java.io.IOException("镜像流传输已取消");
+                        output.write(buffer, 0, count);
+                        sent += count;
+                        if (listener != null) listener.onProgress(sent, -1L);
+                    }
+                    output.flush();
                 }
-                output.flush();
             }
-        } catch (java.io.IOException e) {
-            streamFailure = e;
-        } finally {
-            if (input != null) input.close();
-        }
-
-        if (streamFailure != null) {
+            return null;
+        });
+        Thread writerThread = new Thread(writer, "root-command-input");
+        writerThread.setDaemon(true);
+        writerThread.start();
+        long deadline = System.nanoTime() + timeoutUnit.toNanos(timeout);
+        try {
+            writer.get(timeout, timeoutUnit);
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0 || !process.waitFor(remaining, TimeUnit.NANOSECONDS)) {
+                throw new java.util.concurrent.TimeoutException();
+            }
+            return new Result(process.exitValue(), reader.get(15, TimeUnit.SECONDS).trim());
+        } catch (Exception failure) {
             process.destroyForcibly();
-            process.waitFor(10, TimeUnit.SECONDS);
-            String output = reader.get(15, TimeUnit.SECONDS).trim();
-            throw new IllegalStateException("镜像流传输失败：" + streamFailure.getMessage()
-                    + (output.isEmpty() ? "" : "\n" + output), streamFailure);
+            writer.cancel(true);
+            String output = "";
+            try { output = reader.get(3, TimeUnit.SECONDS).trim(); } catch (Exception ignored) { }
+            if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new IllegalStateException("Root 命令未完成：" + failure
+                    + (output.isEmpty() ? "" : "\n" + output), failure);
         }
-
-        if (!process.waitFor(timeout, timeoutUnit)) {
-            process.destroyForcibly();
-            throw new IllegalStateException("Root 操作超时，已终止等待。请检查设备状态后再试。");
-        }
-        String output = reader.get(15, TimeUnit.SECONDS).trim();
-        return new Result(process.exitValue(), output);
     }
 
     private static String readLimited(InputStream input) throws Exception {
         try (InputStream in = input; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[8192];
             int count;
-            int total = 0;
             boolean truncated = false;
             while ((count = in.read(buffer)) != -1) {
-                total += count;
                 if (out.size() < 2 * 1024 * 1024) {
                     int keep = Math.min(count, 2 * 1024 * 1024 - out.size());
                     out.write(buffer, 0, keep);

@@ -6,7 +6,7 @@
 
 最贴近“多系统槽位管理器”的现成参考是 **[XZY-01/DSUManager](https://github.com/XZY-01/DSUManager)**：MIT、Java 原生 View、2026-11-14 仍有提交，代码中直接使用带 `--install-dir` 的 `gsi_tool` 创建命名槽位，并支持列出、切换和删除多个槽。README 声明在 Redmi K70 Pro / HyperOS 3 / Android 16 / KernelSU 上测试；这不等于已验证 MIX 4、ColorOS 17 或所有设备，也没有承诺固定 16 槽。
 
-本项目第一版已按其 **DSU 槽管理/Root gsi_tool 路线**实现自己的客户端后端，并保留自有 KSU 风格 UI；没有复制上游源码。继续扩展时，需保留槽名校验、覆盖保护、空间预检、失败清理与启动回退。若改为直接复用上游文件，仍需逐文件审查 MIT 声明与来源。
+本项目第一版按其 **DSU 槽管理/Root gsi_tool 路线**实现自有客户端后端并保留 KSU 风格 UI；`SuperImage.java` 是基于上游同名 MIT 文件的派生实现，其他槽位/Root 代码独立编写。第三方来源、修改说明和完整 MIT 声明见 [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)。继续扩展时仍需保留槽名校验、覆盖保护、空间预检、失败状态保护与启动回退。
 
 ## 真正涉及多槽的项目
 
@@ -46,7 +46,7 @@ Appteka 上有名为 **Multi-Dsu** 的 APK 页面，标注 2026-10-15 更新，�
 
 [VegaBobo/DSU-Sideloader](https://github.com/VegaBobo/DSU-Sideloader) 的最新正式版为 v2.03（2023），许可证 Apache-2.0，适合作为标准 DSU 安装、权限模式和错误诊断的参考；其 Root `DSUInstaller` 当前固定 `DEFAULT_SLOT = "dsu"`。多槽能力应参考 XZY 的 `gsi_tool --install-dir` 路线，或 R15Hi 的备份/恢复实现，而不能只依赖上游 Sideloader 标准安装入口。
 
-当前第一版没有复制 VegaBobo 或 XZY 的代码，使用独立的 Java Root shell 后端；后续集成第三方文件时需保留上游声明并更新 NOTICE/许可证记录。
+当前 Root shell 后端独立编写；只有 `SuperImage.java` 基于 XZY-01/DSUManager 的 MIT 文件修改。未复制 VegaBobo 代码。新增第三方文件时需保留上游声明并更新 NOTICE/许可证记录。
 
 ## 内核/系统侧资料
 
@@ -58,3 +58,26 @@ Appteka 上有名为 **Multi-Dsu** 的 APK 页面，标注 2026-10-15 更新，�
 1. 从 XZY `DsuManager.java`、`RootShell.java`、安装工作流中抽取或重写 Root DSU 后端；以自己的名称校验、进程流式写入、事务回滚和数据安全策略替代简单复制。
 2. 自有 UI 保持独立，先支持状态/槽列表/单次启动/回到主系统/安装/删除；多槽能力仅在 Root、`gsi_tool` 和目标 ROM 探测通过后开放。
 3. MIX 4、ColorOS 17 Beta 的 16+ 槽、data 隔离、冷启动/失败回退都需要设备实测；目前没有从上述仓库获得该设备组合的公开验证。
+
+## DSU 镜像安装范围
+
+本应用可以把兼容的 GSI/ROM 分区镜像安装到新的命名 DSU 槽，不会把镜像刷写到设备的物理 system/vendor 分区。当前导入器支持单个 `system.img`（也识别发行版命名的 GSI 镜像）、按分区命名的多分区 ZIP/文件夹、可解析的 `super.img`，以及 sparse 与 `.gz` 输入；只写入白名单中的 `system`、`system_ext`、`product`、`vendor`、`odm`、`vendor_dlkm`、`system_dlkm`、`mi_ext`。`payload.bin`、整包 OTA、`boot`、`vendor_boot`、`vbmeta`、`recovery` 和 `userdata` 不是可安装输入。
+
+AOSP/LineageOS `gsi_tool install` 从标准输入读取一个分区镜像，默认安装 `system` 并创建独立 userdata，也允许通过 `--partition-name` 写入其他 DSU 分区；`--install-dir` 选择命名槽目录，`--no-reboot` 禁止工具自动重启。工具会拒绝在正在运行的 GSI 内安装，因此本应用要求先回主系统。安装成功只证明镜像写入与槽元数据完成，不保证 GSI 与目标设备的 vendor、内核、ABI、AVB 或 SELinux 兼容；启动需单独确认。
+
+- AOSP/LineageOS `gsi_tool.cpp`：<https://github.com/LineageOS/android_system_gsid/blob/lineage-24.0/gsi_tool.cpp>
+- AOSP DSU 文档：<https://developer.android.com/topic/dsu>
+
+## DSU 内预置管理器 APK
+
+对任意导入的第三方 ROM，安装阶段不能直接把应用安装到将来启动的 DSU userdata：宿主当前的 PackageManager 和 `/data/app` 属于宿主系统，而 DSU 有自己的 userdata 与 PackageManager 状态。把 APK 放进 ROM ZIP 也不会生效；当前 importer 只提取分区镜像。
+
+通用且风险较低的路径是在 DSU 首次启动后，通过该系统自己的 Package Installer 或已授权 ADB 安装管理器。应用会存入该槽的独立 userdata，切回其他系统后仍随原槽保留。首启前预置只适合自行构建并验证的 GSI：把普通应用放进 `/system/app` 并正确构建 system 镜像；不应默认放进 `/system/priv-app`，因为本应用没有 privileged permission allowlist，也不会因此获得 Root。任意第三方镜像被改包后，文件系统元数据、SELinux 标签和 AVB 校验都可能失效；重打包或写入成功不代表可以启动。Root provider 还必须在每个 DSU 内可用，并单独授权管理器，APK 预置本身不会带来 Root。
+
+本项目当前采用开发证书签名，包名为 `dev.multisystem.client`。同一槽内后续覆盖更新需保持包名、签名身份兼容并使用递增的 `versionCode`。因此当前建议不自动注入 APK；先在 DSU 内安装并验证管理器及 Root 授权。设备内预置、启动和 A/B 管理器可用性仍需逐 ROM 实测。
+
+- [AOSP DSU 安装器 userdata 处理](https://github.com/aosp-mirror/platform_frameworks_base/blob/main/packages/DynamicSystemInstallationService/src/com/android/dynsystem/InstallationAsyncTask.java)
+- [PackageManager 系统应用扫描](https://github.com/aosp-mirror/platform_frameworks_base/blob/main/services/core/java/com/android/server/pm/InitAppsHelper.java)
+- [Privileged permission allowlist](https://source.android.com/docs/core/permissions/perms-allowlist)
+- [AOSP image builder](https://github.com/aosp-mirror/platform_build/blob/main/tools/releasetools/build_image.py)
+- [AOSP AVB 校验](https://github.com/aosp-mirror/platform_system_core/blob/main/fs_mgr/libfs_avb/fs_avb.cpp)
