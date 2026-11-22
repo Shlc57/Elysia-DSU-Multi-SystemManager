@@ -102,7 +102,6 @@ private val LocalInk = staticCompositionLocalOf { Color.Black }
 private val LocalMuted = staticCompositionLocalOf { Color.Gray }
 private val LocalNight = staticCompositionLocalOf { false }
 private val LocalBottomBarVisible = staticCompositionLocalOf { false }
-private val LocalBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 private enum class CardTone { Normal, Ready, Warning }
 
 @Composable
@@ -203,7 +202,7 @@ private fun AppScaffold(title: String, showBack: Boolean, onBack: () -> Unit, ta
         drawContent()
     }
     val pagePadding = PaddingValues()
-    CompositionLocalProvider(LocalBottomBarVisible provides (tab != null), LocalBackdrop provides backdrop) {
+    CompositionLocalProvider(LocalBottomBarVisible provides (tab != null)) {
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             Canvas(Modifier.fillMaxSize()) {
@@ -303,7 +302,6 @@ private fun AppText(value: String, size: Int = 14, muted: Boolean = false, bold:
 private fun AppCard(tone: CardTone = CardTone.Normal, padding: Int = 16, content: @Composable ColumnScope.() -> Unit) {
     val miuix = MiuixTheme.colorScheme
     val night = LocalNight.current
-    val backdrop = LocalBackdrop.current
     val shape = ContinuousRoundedRectangle(20.dp)
     val container = when (tone) {
         CardTone.Normal -> miuix.surfaceContainer
@@ -316,17 +314,10 @@ private fun AppCard(tone: CardTone = CardTone.Normal, padding: Int = 16, content
         else -> miuix.onSurfaceContainer
     }
     CompositionLocalProvider(LocalInk provides ink, LocalMuted provides ink.copy(alpha = 0.7f)) {
-        val tint = when (tone) {
-            CardTone.Normal -> miuix.surfaceContainer.copy(alpha = if (night) 0.48f else 0.38f)
-            CardTone.Ready -> (if (night) Color(0xff193d2b) else Color(0xffdff7e7)).copy(alpha = 0.74f)
-            CardTone.Warning -> miuix.errorContainer.copy(alpha = 0.76f)
-        }
-        val glass = if (backdrop != null) Modifier.glassSurface(backdrop, shape, tint) else Modifier
-        MCard(Modifier.fillMaxWidth().then(glass)
+        MCard(Modifier.fillMaxWidth()
             .shadow(if (tone == CardTone.Normal) 1.dp else 0.dp, shape).clip(shape),
             cornerRadius = 20.dp, insideMargin = PaddingValues(padding.dp),
-            colors = MCardDefaults.defaultColors(color = if (backdrop != null) Color.Transparent else container,
-                contentColor = ink)) { content() }
+            colors = MCardDefaults.defaultColors(color = container, contentColor = ink)) { content() }
     }
 }
 
