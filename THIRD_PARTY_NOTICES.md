@@ -1,5 +1,15 @@
 # Third party notices
 
+## Compose UI dependencies
+
+- Miuix 0.9.4 (`miuix-ui-android`, `miuix-preference-android`, `miuix-nav-android` and their dependencies): Apache-2.0, copyright compose-miuix-ui contributors. https://github.com/compose-miuix-ui/miuix
+- AndroidX Jetpack Compose / Material 3 / Activity / Lifecycle: Apache-2.0, Android Open Source Project. https://developer.android.com/jetpack/androidx
+- Kotlin and kotlinx.serialization: Apache-2.0, JetBrains and contributors. https://github.com/JetBrains/kotlin
+- MaterialKolor / Material Color Utilities (theme palette generation): Apache-2.0. https://github.com/jordond/MaterialKolor and https://github.com/material-foundation/material-color-utilities
+
+These libraries are used as Gradle dependencies. KernelSU manager source is not copied into this app.
+Apache-2.0 license: https://www.apache.org/licenses/LICENSE-2.0
+
 ## XZY-01/DSUManager
 
 `SuperImage.java` derives from XZY-01/DSUManager at commit

@@ -1,5 +1,13 @@
 # 更新日志
 
+## v0.2.0 — Compose 组件接入测试
+
+- 页面迁移到 Kotlin / Jetpack Compose，直接使用 Miuix 0.9.4 和 Material 3。
+- 新增真实 Miuix / Material 风格选择，保留主题色、深浅色、AMOLED 和日志功能。
+- 使用 Miuix 导航运行时实现页面转场与返回栈，主导航使用 Compose 淡入淡出。
+- 参考 KSU 的彩色状态卡、分组信息与偏好项布局，Material 使用完整种子色配色，主题页提供真实色板。
+- Gradle 构建替代纯 Java SDK 直编，保留开发签名、版本递增和 output 忽略规则。
+- DSU 后端保持 Java，保留安装、删除与切槽的校验/确认限制。
 ## v0.1.9 — 首页运行槽位信息
 
 - 移除首页状态卡中重复的产品名称。

@@ -1,4 +1,4 @@
-# Elysia 多系统工具箱（第一版）
+# Elysia 多系统工具箱
 
 基于 Root + Android `gsi_tool` / DSU 的多槽客户端原型，软件名称为 **Elysia 多系统工具箱**，UI 参考 KernelSU Manager。项目已初始化 Git；当前实现只面向**已支持 DSU 多槽的设备**，不修改物理分区。
 
@@ -10,8 +10,8 @@
 - 支持独立分区镜像多选、镜像 ZIP、ROM 文件夹、raw/sparse/gzip 镜像和 `super.img` LP 解包；支持 system、system_ext、product、vendor、odm、vendor_dlkm、system_dlkm、mi_ext。
 - 以新槽方式按固定顺序写入多个动态分区；设置 userdata 大小。拒绝覆盖同名槽，按 Root 临时副本 + DSU 分区 + userdata + 余量保守检查剩余 `/data` 空间和镜像传输长度。
 - `gsi_tool enable -d <slot> -s` 单次启动，并提供禁用 DSU 后重启回主系统。
-- 删除非运行槽位；正在运行 DSU 时禁止安装、切换和删除。
-- KSU 风格首页、系统列表、设置、安全提示和操作日志。
+- 删除非运行槽位；正在运行 DSU 时禁止安装和删除，直切要求目标槽元数据核验并确认单次启动。
+- Kotlin / Jetpack Compose 界面，直接引用 Miuix 与 Material 3；支持两套组件风格、主题色、深色 / AMOLED、导航转场和操作日志。
 
 ## 当前不包含
 
@@ -33,17 +33,17 @@
 
 ## 构建
 
-- JDK 17+
-- Gradle 9.1+
-- Android Gradle Plugin 9.0+
-- Android SDK Platform 36、Build Tools 36.0.0
+- JDK 21（包含 javac）
+- Gradle 9.7.1（Wrapper）
+- Android Gradle Plugin 9.4.1、Kotlin / Compose compiler 2.4.20
+- Android SDK Platform 37.0、Build Tools 37.0.0
 
 ```bash
 ./gradlew assembleDebug
 # Windows PowerShell: .\gradlew.bat assembleDebug
 ```
 
-当前环境可使用 `/home/elysia/elysia-dsu-tools/android-sdk` 下的 Android Platform 36 和 Build Tools 36.0.0。除 Gradle 构建外，也提供不依赖 Maven 的 SDK 直编脚本：
+需要通过 Gradle 下载 Compose/Miuix 依赖；旧的纯 Java SDK 直编方式已停用。以下脚本调用 Gradle 构建和单元测试，验证签名/对齐并将结果放入被忽略的 `output/`。覆盖安装需要本地 `.sign/elysia-debug.jks` 与已安装版本保持同一证书，不提交签名文件。
 
 ```bash
 python3 scripts/build_apk.py --sdk /home/elysia/elysia-dsu-tools/android-sdk
