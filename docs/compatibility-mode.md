@@ -9,7 +9,7 @@
 
 ## 内置脚本
 
-`app/src/main/assets/dsu-permissive-v0.7.0.sh` 是用户提供的 DSU-Permissive Android flasher 原文件，未修改地随 APK 发布。其 SHA-256 为：
+`app/src/main/assets/dsu-permissive-v0.7.0.sh` 来自 DSU-Permissive 官方 [0.7.0 Release](https://github.com/yangFenTuoZi/DSU-Permissive/releases/tag/0.7.0)，作为官方单文件 Android flasher 原样随 APK 发布。已核对 GitHub 最新稳定 Release 与 `main` 分支最新提交（截至 2026-11-22 均指向 `853bd9badee38b998c3c0cf2c33336fc44aa1476`）；官方资产大小和 SHA-256 与 APK 所内置文件完全一致：
 
 ```text
 86b7c4eaaed8d11211c15c71302f0ecc620de1b0647c510299895ed6ec01c04d
@@ -17,7 +17,7 @@
 
 管理器在使用前校验脚本长度和 SHA-256；再将副本送入 Root 暂存目录，并在执行前再次校验。任何哈希不匹配都会中止。未执行过脚本的开发环境构建或测试不会触碰设备。
 
-应用先做只读环境检查：Root、CPU 架构、内核/KMI、当前 DSU 状态、当前槽位 boot/init_boot 路径、分区大小和可用空间。脚本修补流程会完整备份目标分区、校验备份大小并生成/验证副本。管理器提供两种明确分开的操作：
+应用先做只读环境检查：Root、CPU 架构、内核/KMI、当前 DSU 状态、当前槽位 boot/init_boot 路径、分区大小和可用空间。伪回锁界面的“新手使用教程”按步骤说明从检查到生成/刷写，并提示失败时停止重启。脚本修补流程会完整备份目标分区、校验备份大小并生成/验证副本。管理器提供两种明确分开的操作：
 
 1. **仅备份并生成补丁**：不写 boot/init_boot。
 2. **备份、生成并刷入**：弹出独立确认框，显示目标分区、SELinux/AVB/表选项和写入风险。确认后才传入脚本的 `--flash`。脚本会刷后回读并做 SHA-256 校验；失败信息要求不要重启并保留备份。管理器不会自动重启。

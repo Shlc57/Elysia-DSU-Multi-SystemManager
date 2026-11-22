@@ -12,8 +12,8 @@
 - `gsi_tool enable -d <slot> -s` 单次启动，并提供禁用 DSU 后重启回主系统。
 - 删除非运行槽位；正在运行 DSU 时禁止安装和删除，直切要求目标槽元数据核验并确认单次启动。
 - Kotlin / Jetpack Compose 界面，固定使用 Miuix 组件风格；支持主题色、深色 / AMOLED、导航转场和操作日志。
-- 伪回锁兼容模式：内置并校验 DSU-Permissive v0.7.0，检查环境后可生成补丁；刷入需在二次确认后执行，脚本先备份并回读校验，管理器不自动重启。模式切换与默认 DSU 流程分离，不改变 Bootloader 的真实锁定状态。详见 [`docs/compatibility-mode.md`](docs/compatibility-mode.md)。
-- AndroidLiquidGlass Backdrop 提供顶部与底部导航的动态毛玻璃 / 折射效果；底栏避让系统导航区并为页面留出滚动空间。
+- 伪回锁兼容模式：内置并校验与上游最新稳定 Release 一致的 DSU-Permissive v0.7.0。环境检查下方提供分步新手教程；刷入需单独二次确认，脚本先备份并回读校验，管理器不自动重启。模式切换不改变 Bootloader 的真实锁定状态。详见 [`docs/compatibility-mode.md`](docs/compatibility-mode.md)。
+- AndroidLiquidGlass Backdrop 为 Miuix 卡片、顶部栏和底部导航提供动态毛玻璃 / 折射；强化模糊、高光和背景色彩层次，底栏避让系统导航区。
 
 ## 当前不包含
 

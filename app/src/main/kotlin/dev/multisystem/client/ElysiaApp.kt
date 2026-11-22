@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.shadow
@@ -94,12 +95,14 @@ internal sealed interface Page : NavKey {
     @Serializable data object About : Page
     @Serializable data object Import : Page
     @Serializable data object Sources : Page
+    @Serializable data object CompatibilityGuide : Page
 }
 
 private val LocalInk = staticCompositionLocalOf { Color.Black }
 private val LocalMuted = staticCompositionLocalOf { Color.Gray }
 private val LocalNight = staticCompositionLocalOf { false }
 private val LocalBottomBarVisible = staticCompositionLocalOf { false }
+private val LocalBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 private enum class CardTone { Normal, Ready, Warning }
 
 @Composable
@@ -112,12 +115,12 @@ internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
     SideEffect { onSelectionReady { while (stack.size > 1) stack.removeAt(stack.lastIndex); tab = 0 } }
     val page = stack.last()
     val title = when (page) {
+        Page.CompatibilityGuide -> "使用说明"
         Page.Theme -> "主题设置"
         Page.About -> "关于"
         Page.Import -> "添加镜像"
         Page.Sources -> "开源项目"
-        else -> if (tab == 0 && model.mode == ManagerMode.Compatibility) "伪回锁模式"
-            else if (tab == 0) "Elysia 多系统工具箱" else "设置"
+        else -> "Elysia 多系统工具箱"
     }
     ElysiaTheme(model) {
         val swipe = if (LocalLayoutDirection.current == LayoutDirection.Rtl) NavSwipeDirection.RightToLeft else NavSwipeDirection.LeftToRight
@@ -131,7 +134,9 @@ internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
                         AnimatedContent(targetState = tab to model.mode, transitionSpec = {
                             fadeIn(tween(340)) togetherWith fadeOut(tween(340))
                         }, label = "MainTabs") { selected ->
-                            if (selected.first == 0 && selected.second == ManagerMode.Compatibility) CompatibilityPage(model, onOpenUrl)
+                            if (selected.first == 0 && selected.second == ManagerMode.Compatibility) {
+                                CompatibilityPage(model, onOpenUrl) { push(Page.CompatibilityGuide) }
+                            }
                             else if (selected.first == 0) HomePage(model) { push(Page.Import) }
                             else SettingsPage(model, { push(Page.Theme) }, { push(Page.About) })
                         }
@@ -140,6 +145,9 @@ internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
                     entry<Page.About>(swipeDismiss = swipe) { AboutPage(onOpenUrl, onJoinGroup) { push(Page.Sources) } }
                     entry<Page.Import>(swipeDismiss = swipe) { ImportPage(model, onFiles, onFolder) }
                     entry<Page.Sources>(swipeDismiss = swipe) { SourcePage(onOpenUrl) }
+                    entry<Page.CompatibilityGuide>(swipeDismiss = swipe) {
+                        CompatibilityGuidePage(onOpenUrl)
+                    }
                 }
                 ConfirmationDialog(model)
             }
@@ -195,16 +203,22 @@ private fun AppScaffold(title: String, showBack: Boolean, onBack: () -> Unit, ta
         drawContent()
     }
     val pagePadding = PaddingValues()
-    CompositionLocalProvider(LocalBottomBarVisible provides (tab != null)) {
+    CompositionLocalProvider(LocalBottomBarVisible provides (tab != null), LocalBackdrop provides backdrop) {
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             Canvas(Modifier.fillMaxSize()) {
                 drawRect(surface)
                 val radius = size.minDimension * 0.44f
-                drawCircle(primary.copy(alpha = if (night) 0.12f else 0.08f), radius,
-                    Offset(size.width * 0.94f, size.height * 0.10f))
-                drawCircle(tertiary.copy(alpha = if (night) 0.15f else 0.10f), radius * 0.76f,
-                    Offset(size.width * 0.02f, size.height * 0.78f))
+                drawCircle(brush = Brush.radialGradient(
+                    colors = listOf(primary.copy(alpha = if (night) 0.32f else 0.24f),
+                        primary.copy(alpha = if (night) 0.11f else 0.08f), Color.Transparent),
+                    center = Offset(size.width * 0.94f, size.height * 0.10f), radius = radius),
+                    radius = radius, center = Offset(size.width * 0.94f, size.height * 0.10f))
+                drawCircle(brush = Brush.radialGradient(
+                    colors = listOf(tertiary.copy(alpha = if (night) 0.34f else 0.26f),
+                        tertiary.copy(alpha = if (night) 0.12f else 0.09f), Color.Transparent),
+                    center = Offset(size.width * 0.02f, size.height * 0.78f), radius = radius * 0.86f),
+                    radius = radius * 0.86f, center = Offset(size.width * 0.02f, size.height * 0.78f))
             }
             content(pagePadding)
         }
@@ -220,11 +234,17 @@ private fun Modifier.glassSurface(backdrop: Backdrop, shape: Shape, tint: Color)
     shape = { shape },
     effects = {
         vibrancy()
-        blur(12f.dp.toPx())
-        if (Build.VERSION.SDK_INT >= 33) lens(9f.dp.toPx(), 16f.dp.toPx())
+        blur(22f.dp.toPx())
+        if (Build.VERSION.SDK_INT >= 33) lens(14f.dp.toPx(), 28f.dp.toPx())
     },
-    onDrawSurface = { drawRect(tint); drawRect(Color.White.copy(alpha = 0.28f),
-        style = Stroke(width = 1.dp.toPx())) }
+    onDrawSurface = {
+        drawRect(tint)
+        drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.32f),
+            Color.White.copy(alpha = 0.04f), tint.copy(alpha = 0.16f))))
+        drawRect(Color.White.copy(alpha = 0.56f), style = Stroke(width = 1.dp.toPx()))
+        drawLine(Color.White.copy(alpha = 0.40f), Offset(24.dp.toPx(), 1.dp.toPx()),
+            Offset(size.width - 24.dp.toPx(), 1.dp.toPx()), strokeWidth = 1.dp.toPx())
+    }
 )
 
 @Composable
@@ -234,7 +254,7 @@ private fun GlassHeader(backdrop: Backdrop, title: String, showBack: Boolean, on
     val night = LocalNight.current
     Row(modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)
         .height(54.dp).glassSurface(backdrop, ContinuousRoundedRectangle(24.dp),
-            surface.copy(alpha = if (night) 0.72f else 0.66f))
+            surface.copy(alpha = if (night) 0.48f else 0.38f))
         .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (showBack) {
             MButton(onClick = onBack, modifier = Modifier.size(40.dp).semantics { contentDescription = "返回" },
@@ -253,7 +273,7 @@ private fun GlassNavigationBar(backdrop: Backdrop, tab: Int, onTab: (Int) -> Uni
     val night = LocalNight.current
     Row(modifier.navigationBarsPadding().padding(bottom = 8.dp).widthIn(max = 232.dp).fillMaxWidth()
         .height(52.dp).glassSurface(backdrop, ContinuousCapsule,
-            MiuixTheme.colorScheme.surface.copy(alpha = if (night) 0.74f else 0.64f))
+            MiuixTheme.colorScheme.surface.copy(alpha = if (night) 0.50f else 0.40f))
         .padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly) {
         listOf("首页" to R.drawable.ic_nav_home, "设置" to R.drawable.ic_nav_settings)
@@ -283,6 +303,8 @@ private fun AppText(value: String, size: Int = 14, muted: Boolean = false, bold:
 private fun AppCard(tone: CardTone = CardTone.Normal, padding: Int = 16, content: @Composable ColumnScope.() -> Unit) {
     val miuix = MiuixTheme.colorScheme
     val night = LocalNight.current
+    val backdrop = LocalBackdrop.current
+    val shape = ContinuousRoundedRectangle(20.dp)
     val container = when (tone) {
         CardTone.Normal -> miuix.surfaceContainer
         CardTone.Ready -> if (LocalNight.current) Color(0xff193d2b) else Color(0xffdff7e7)
@@ -294,10 +316,17 @@ private fun AppCard(tone: CardTone = CardTone.Normal, padding: Int = 16, content
         else -> miuix.onSurfaceContainer
     }
     CompositionLocalProvider(LocalInk provides ink, LocalMuted provides ink.copy(alpha = 0.7f)) {
-        MCard(Modifier.fillMaxWidth().shadow(if (tone == CardTone.Normal) 1.dp else 0.dp,
-            ContinuousRoundedRectangle(20.dp)).clip(ContinuousRoundedRectangle(20.dp)),
+        val tint = when (tone) {
+            CardTone.Normal -> miuix.surfaceContainer.copy(alpha = if (night) 0.48f else 0.38f)
+            CardTone.Ready -> (if (night) Color(0xff193d2b) else Color(0xffdff7e7)).copy(alpha = 0.74f)
+            CardTone.Warning -> miuix.errorContainer.copy(alpha = 0.76f)
+        }
+        val glass = if (backdrop != null) Modifier.glassSurface(backdrop, shape, tint) else Modifier
+        MCard(Modifier.fillMaxWidth().then(glass)
+            .shadow(if (tone == CardTone.Normal) 1.dp else 0.dp, shape).clip(shape),
             cornerRadius = 20.dp, insideMargin = PaddingValues(padding.dp),
-            colors = MCardDefaults.defaultColors(color = container, contentColor = ink)) { content() }
+            colors = MCardDefaults.defaultColors(color = if (backdrop != null) Color.Transparent else container,
+                contentColor = ink)) { content() }
     }
 }
 
@@ -595,7 +624,7 @@ private fun ConfirmationDialog(model: ManagerViewModel) {
 }
 
 @Composable
-private fun CompatibilityPage(model: ManagerViewModel, onOpenUrl: (String) -> Unit) {
+private fun CompatibilityPage(model: ManagerViewModel, onOpenUrl: (String) -> Unit, onGuide: () -> Unit) {
     LaunchedEffect(Unit) {
         snapshotFlow { model.busy }.first { !it }
         model.inspectCompatibility()
@@ -617,6 +646,7 @@ private fun CompatibilityPage(model: ManagerViewModel, onOpenUrl: (String) -> Un
             Spacer(Modifier.height(10.dp))
             AppButton("重新检查环境", model::inspectCompatibility, !model.busy, false)
         }
+        PreferenceRow("新手使用教程", "从检查环境到备份、生成补丁与刷入", onGuide)
         AppCard(padding = 0) {
             SwitchPreference(title = "SELinux 启动期辅助", summary = "仅用于 DSU 启动期，不持续拦截 setenforce",
                 checked = options.selinux, enabled = !model.busy,
@@ -637,6 +667,38 @@ private fun CompatibilityPage(model: ManagerViewModel, onOpenUrl: (String) -> Un
             SelectionContainer { AppText(model.compatibilityMessage, 12) }
         }
         PreferenceRow("DSU-Permissive 源码与说明", "", { onOpenUrl(CompatibilityTool.SOURCE) })
+    }
+}
+
+@Composable
+private fun CompatibilityGuidePage(onOpenUrl: (String) -> Unit) {
+    ScreenColumn {
+        AppCard(CardTone.Warning) {
+            AppText("先看这段：它不是真回锁", 17, bold = true)
+            AppText("此模式不会解锁或重新锁定 Bootloader。只有设备启动链本来就允许启动对应的修改后 boot/init_boot，并满足上游要求时，脚本才可能帮助 DSU 启动。它不能替代解锁、签名或设备专属适配。", 13)
+        }
+        GuideStepCard("1", "确认设备条件", "先授予本管理器 Root。上游当前目标是 arm64 GKI，且待修补的宿主引导镜像已由外部启动链允许启动、已按上游要求由 KernelSU LKM 处理；Android 12 通常是 boot.img，Android 13 及以上通常是 init_boot.img。请在主系统操作，不要在 DSU 已运行时修补。出现“不支持 / 未识别 / 正在运行 DSU”就先停止，不要尝试刷入。")
+        GuideStepCard("2", "先准备好恢复办法", "确认你有原始 boot/init_boot 的完整备份，并知道如何通过自己熟悉的 Recovery 或 fastboot 恢复。刷错引导分区可能导致无法启动；不要只依赖本应用里的备份，也不要在没有恢复途径时继续。")
+        GuideStepCard("3", "回到环境检查", "返回上一页点“重新检查环境”。看清内核、KMI 世代和引导分区名称；确认当前不是 DSU、目标分区确实属于本机。若提示 avb_enforce，或你不确定这些信息，取消操作并先查设备/上游说明。")
+        GuideStepCard("4", "保持保守选项", "SELinux 启动期辅助和 AVB 启动期辅助默认开启；dm-verity 表辅助默认关闭，普通情况下先保持关闭。不要为了“兼容更多机型”而随意开关；修改选项后需要重新生成并刷入对应补丁。")
+        GuideStepCard("5", "先只生成，不写分区", "点“仅备份并生成补丁”。这一步会读取目标引导分区、制作完整备份、生成并验证补丁镜像，但不会写回分区。等操作结果显示成功后，保存结果里给出的备份路径和补丁路径；若失败就停在这里。")
+        GuideStepCard("6", "确认后才刷入", "只有在确认设备、槽位、分区名和恢复方法都正确后，才点“备份、生成并刷入引导分区…”。弹窗会再次显示目标分区和风险；逐项核对，不确定就点取消。确认后脚本会再次备份、生成补丁、刷入并回读校验。")
+        GuideStepCard("7", "根据结果处理", "只有看到“刷入并回读校验成功”才算刷写校验通过。管理器不会自动重启；请先保存备份路径和恢复命令，再按设备自己的 DSU 流程决定下一步。若刷写/回读报错或提示“请勿重启”，不要重启，保留备份并先恢复或寻求设备维护帮助。")
+        AppCard {
+            AppText("当前内置版本", 17, bold = true)
+            AppText("DSU-Permissive 0.7.0，与上游最新稳定 Release 的脚本资产 SHA-256 一致。上游支持范围和设备前提可能变化；本管理器不会自动更新脚本。", 13)
+            Spacer(Modifier.height(8.dp))
+            AppButton("打开上游项目与最新说明", { onOpenUrl(CompatibilityTool.SOURCE) }, primary = false)
+        }
+    }
+}
+
+@Composable
+private fun GuideStepCard(number: String, title: String, description: String) {
+    AppCard {
+        AppText("第 $number 步：$title", 16, bold = true, color = MiuixTheme.colorScheme.primary)
+        Spacer(Modifier.height(4.dp))
+        AppText(description, 13)
     }
 }
 

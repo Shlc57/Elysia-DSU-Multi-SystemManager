@@ -8,7 +8,7 @@ import org.junit.Test
 
 class PageSerializationTest {
     @Test fun navigationKeysSurviveStateSerialization() {
-        listOf(Page.Main, Page.Theme, Page.About, Page.Import, Page.Sources).forEach { page ->
+        listOf(Page.Main, Page.Theme, Page.About, Page.Import, Page.Sources, Page.CompatibilityGuide).forEach { page ->
             assertEquals(page, Json.decodeFromString<Page>(Json.encodeToString<Page>(page)))
         }
     }

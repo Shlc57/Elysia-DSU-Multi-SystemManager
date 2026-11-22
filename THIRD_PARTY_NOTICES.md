@@ -14,7 +14,7 @@ Apache-2.0 license: https://www.apache.org/licenses/LICENSE-2.0
 
 ## Bundled DSU-Permissive tool
 
-The APK includes the user-provided `dsu-permissive-android-flasher-v0.7.0.sh` unchanged as an asset.
+The APK includes the upstream DSU-Permissive 0.7.0 Android flasher release asset unchanged as an asset.
 Its SHA-256 is pinned in the wrapper and checked before use. The bundle embeds loader/kernel-module
 components marked GPL-2.0-only and a Magisk `magiskboot` binary under GPL-3.0; corresponding license
 texts are included in this repository and in the APK license assets. Source is available at the upstream projects below.
