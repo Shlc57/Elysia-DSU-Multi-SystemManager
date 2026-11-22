@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-internal enum class UiStyle { Miuix, Material }
+internal enum class ManagerMode(val title: String) { Standard("默认模式"), Compatibility("伪回锁模式") }
 internal data class Confirmation(val title: String, val message: String, val action: String, val slot: String = "")
 
 /** UI state is independent of either component library. Root operations remain in the Java backend. */
@@ -32,7 +32,16 @@ internal class ManagerViewModel(application: Application, private val saved: Sav
     private val app = application
     private val prefs = app.getSharedPreferences("settings", 0)
     private val backend = MultiSystemBackend()
-    var style by mutableStateOf(if (prefs.getString("compose_style", "miuix") == "material") UiStyle.Material else UiStyle.Miuix)
+    private val compatibility = CompatibilityTool(app)
+    var compatibilityPlan by mutableStateOf<CompatibilityPlan?>(null)
+        private set
+    var verifiedBundle by mutableStateOf(false)
+        private set
+    var compatibilityMessage by mutableStateOf("")
+        private set
+    var compatibilityOptions by mutableStateOf(CompatibilityOptions())
+        private set
+    var mode by mutableStateOf(if (prefs.getString("manager_mode", "standard") == "compatibility") ManagerMode.Compatibility else ManagerMode.Standard)
         private set
     var themeMode by mutableStateOf(loadTheme())
         private set
@@ -93,9 +102,41 @@ internal class ManagerViewModel(application: Application, private val saved: Sav
         return prefs.getInt("theme", 0).coerceIn(0, 3)
     }
 
-    fun updateStyle(value: UiStyle) {
-        style = value
-        prefs.edit().putString("compose_style", if (value == UiStyle.Miuix) "miuix" else "material").apply()
+    fun updateMode(value: ManagerMode) {
+        if (busy) return
+        mode = value
+        prefs.edit().putString("manager_mode", if (value == ManagerMode.Compatibility) "compatibility" else "standard").apply()
+    }
+    fun updateCompatibilityOptions(value: CompatibilityOptions) {
+        if (!busy) compatibilityOptions = if (!value.avb) value.copy(verity = false) else value
+    }
+    fun inspectCompatibility() {
+        if (busy) return
+        operationBusy = true
+        viewModelScope.launch {
+            try {
+                verifiedBundle = withContext(Dispatchers.IO) { compatibility.hasVerifiedBundle() }
+                compatibilityPlan = withContext(Dispatchers.IO) { compatibility.inspect() }
+                compatibilityMessage = "环境已检查。识别到 KMI 世代不代表模块签名及厂商符号兼容。"
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { compatibilityPlan = null; compatibilityMessage = e.message.orEmpty() }
+            finally { operationBusy = false }
+        }
+    }
+    fun confirmCompatibilityPreparation(flash: Boolean) {
+        if (busy || !verifiedBundle || compatibilityPlan?.canPrepare != true) return
+        if (compatibilityOptions.avb && compatibilityPlan?.avbEnforce == true) {
+            compatibilityMessage = "存在 avb_enforce 标记，不能确认 AVB 辅助路径；不会自动删除标记。"
+            return
+        }
+        val action = if (flash) "compatibility-flash" else "compatibility-prepare"
+        val summary = "目标：${compatibilityPlan?.partition}\n" +
+            "先完整备份，再修补并校验引导镜像。\n" +
+            "SELinux：${compatibilityOptions.selinux}，AVB：${compatibilityOptions.avb}，表辅助：${compatibilityOptions.verity}\n\n" +
+            (if (flash) "确认后会将补丁写入以上 boot/init_boot 分区，随后回读校验；应用不会重启设备。请确认已有可用恢复途径。"
+            else "本次只生成补丁文件，不写引导分区。")
+        confirmation = Confirmation(if (flash) "备份、修补并刷入？" else "备份并生成引导补丁？",
+            "$summary\n不会改变 Bootloader 的真实锁定状态。", action)
     }
     fun setTheme(value: Int) { themeMode = value; prefs.edit().putInt("theme", value).apply() }
     fun updateAccent(value: Int) { accent = value or 0xff000000.toInt(); prefs.edit().putInt("accent_color", accent).apply() }
@@ -230,6 +271,22 @@ internal class ManagerViewModel(application: Application, private val saved: Sav
             "return" -> operation("回主系统") { backend.disableAndReboot() }
             "delete" -> operation("删除槽位 ${request.slot}") { backend.delete(request.slot) }
             "logs" -> { logs = emptyList(); persistLogs() }
+            "compatibility-prepare", "compatibility-flash" -> {
+                if (busy || mode != ManagerMode.Compatibility) return
+                val options = compatibilityOptions
+                val flash = request.action == "compatibility-flash"
+                operationBusy = true
+                compatibilityMessage = if (flash) "正在备份、修补并刷写；请保持应用前台。"
+                    else "正在备份并生成补丁；不会写入引导分区，请保持应用前台。"
+                viewModelScope.launch {
+                    try {
+                        compatibilityMessage = withContext(Dispatchers.IO) { compatibility.prepare(options, flash) }
+                        appendLog(compatibilityMessage)
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { compatibilityMessage = e.message.orEmpty(); appendLog(compatibilityMessage) }
+                    finally { operationBusy = false }
+                }
+            }
         }
     }
 

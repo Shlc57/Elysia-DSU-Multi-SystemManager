@@ -11,7 +11,9 @@
 - 以新槽方式按固定顺序写入多个动态分区；设置 userdata 大小。拒绝覆盖同名槽，按 Root 临时副本 + DSU 分区 + userdata + 余量保守检查剩余 `/data` 空间和镜像传输长度。
 - `gsi_tool enable -d <slot> -s` 单次启动，并提供禁用 DSU 后重启回主系统。
 - 删除非运行槽位；正在运行 DSU 时禁止安装和删除，直切要求目标槽元数据核验并确认单次启动。
-- Kotlin / Jetpack Compose 界面，直接引用 Miuix 与 Material 3；支持两套组件风格、主题色、深色 / AMOLED、导航转场和操作日志。
+- Kotlin / Jetpack Compose 界面，固定使用 Miuix 组件风格；支持主题色、深色 / AMOLED、导航转场和操作日志。
+- 伪回锁兼容模式：内置并校验 DSU-Permissive v0.7.0，检查环境后可生成补丁；刷入需在二次确认后执行，脚本先备份并回读校验，管理器不自动重启。模式切换与默认 DSU 流程分离，不改变 Bootloader 的真实锁定状态。详见 [`docs/compatibility-mode.md`](docs/compatibility-mode.md)。
+- AndroidLiquidGlass Backdrop 提供顶部与底部导航的动态毛玻璃 / 折射效果；底栏避让系统导航区并为页面留出滚动空间。
 
 ## 当前不包含
 

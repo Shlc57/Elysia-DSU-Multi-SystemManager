@@ -27,7 +27,6 @@ class MainActivity : ComponentActivity() {
             model.scanFolder(uri) { selectionReady() }
         }
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -61,6 +60,6 @@ class MainActivity : ComponentActivity() {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); return }
             catch (_: Exception) { }
         }
-        Toast.makeText(this, "未检测到 QQ 客户端，群号：811309060", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "无法调起 QQ，请安装 QQ 后重试", Toast.LENGTH_LONG).show()
     }
 }

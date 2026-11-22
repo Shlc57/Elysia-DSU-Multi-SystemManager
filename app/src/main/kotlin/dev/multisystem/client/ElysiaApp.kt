@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -17,17 +18,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowInsetsControllerCompat
@@ -40,26 +44,39 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
+import android.os.Build
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import kotlinx.serialization.Serializable
 import com.materialkolor.rememberDynamicColorScheme
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
+import com.kyant.capsule.ContinuousCapsule
+import com.kyant.capsule.ContinuousRoundedRectangle
+import kotlinx.coroutines.flow.first
 import top.yukonga.miuix.kmp.basic.Button as MButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MButtonDefaults
+import top.yukonga.miuix.kmp.basic.Icon as MIcon
+import top.yukonga.miuix.kmp.basic.HorizontalDivider as MDivider
 import top.yukonga.miuix.kmp.basic.Card as MCard
 import top.yukonga.miuix.kmp.basic.CardDefaults as MCardDefaults
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar as MFloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem as MFloatingNavigationBarItem
-import top.yukonga.miuix.kmp.basic.TopAppBar as MTopAppBar
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold as MScaffold
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator as MProgress
 import top.yukonga.miuix.kmp.basic.Text as MText
 import top.yukonga.miuix.kmp.basic.TextField as MTextField
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme as miuixDarkColors
 import top.yukonga.miuix.kmp.theme.lightColorScheme as miuixLightColors
@@ -76,14 +93,14 @@ internal sealed interface Page : NavKey {
     @Serializable data object Theme : Page
     @Serializable data object About : Page
     @Serializable data object Import : Page
+    @Serializable data object Sources : Page
 }
 
-private val LocalStyle = staticCompositionLocalOf { UiStyle.Miuix }
 private val LocalInk = staticCompositionLocalOf { Color.Black }
 private val LocalMuted = staticCompositionLocalOf { Color.Gray }
 private val LocalNight = staticCompositionLocalOf { false }
-private val LocalPageScroll = staticCompositionLocalOf<NestedScrollConnection?> { null }
-private enum class CardTone { Normal, Ready, Warning, Accent }
+private val LocalBottomBarVisible = staticCompositionLocalOf { false }
+private enum class CardTone { Normal, Ready, Warning }
 
 @Composable
 internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: () -> Unit,
@@ -98,7 +115,9 @@ internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
         Page.Theme -> "主题设置"
         Page.About -> "关于"
         Page.Import -> "添加镜像"
-        else -> if (tab == 0) "Elysia 多系统工具箱" else "设置"
+        Page.Sources -> "开源项目"
+        else -> if (tab == 0 && model.mode == ManagerMode.Compatibility) "伪回锁模式"
+            else if (tab == 0) "Elysia 多系统工具箱" else "设置"
     }
     ElysiaTheme(model) {
         val swipe = if (LocalLayoutDirection.current == LayoutDirection.Rtl) NavSwipeDirection.RightToLeft else NavSwipeDirection.LeftToRight
@@ -109,16 +128,18 @@ internal fun ElysiaApp(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
                     effects = NavDisplayEffects(blockInputDuringTransition = true, backdropColor = MaterialTheme.colorScheme.background)) {
                     entry<Page.Main> {
                         BackHandler(enabled = tab != 0) { tab = 0 }
-                        AnimatedContent(targetState = tab, transitionSpec = {
+                        AnimatedContent(targetState = tab to model.mode, transitionSpec = {
                             fadeIn(tween(340)) togetherWith fadeOut(tween(340))
                         }, label = "MainTabs") { selected ->
-                            if (selected == 0) HomePage(model) { push(Page.Import) }
+                            if (selected.first == 0 && selected.second == ManagerMode.Compatibility) CompatibilityPage(model, onOpenUrl)
+                            else if (selected.first == 0) HomePage(model) { push(Page.Import) }
                             else SettingsPage(model, { push(Page.Theme) }, { push(Page.About) })
                         }
                     }
                     entry<Page.Theme>(swipeDismiss = swipe) { ThemePage(model) }
-                    entry<Page.About>(swipeDismiss = swipe) { AboutPage(onOpenUrl, onJoinGroup) }
+                    entry<Page.About>(swipeDismiss = swipe) { AboutPage(onOpenUrl, onJoinGroup) { push(Page.Sources) } }
                     entry<Page.Import>(swipeDismiss = swipe) { ImportPage(model, onFiles, onFolder) }
+                    entry<Page.Sources>(swipeDismiss = swipe) { SourcePage(onOpenUrl) }
                 }
                 ConfirmationDialog(model)
             }
@@ -155,160 +176,164 @@ private fun ElysiaTheme(model: ManagerViewModel, content: @Composable () -> Unit
         primaryVariant = primary, disabledPrimaryButton = lerp(primary, Color.White, 0.7f),
         primaryContainer = materialColors.primaryContainer, onPrimaryContainer = materialColors.onPrimaryContainer,
         tertiaryContainer = materialColors.tertiaryContainer, onTertiaryContainer = materialColors.onTertiaryContainer)
-    CompositionLocalProvider(LocalStyle provides model.style,
-        LocalNight provides night,
+    CompositionLocalProvider(LocalNight provides night,
         LocalInk provides if (night) Color(0xffeeeeee) else Color(0xff202020),
         LocalMuted provides if (night) Color(0xffb0b0b0) else Color(0xff6a6a6a)) {
         MaterialExpressiveTheme(colorScheme = materialColors) { MiuixTheme(colors = miuix) { content() } }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppScaffold(title: String, showBack: Boolean, onBack: () -> Unit, tab: Int?, onTab: (Int) -> Unit,
                         content: @Composable (PaddingValues) -> Unit) {
-    val miuixScroll = MiuixScrollBehavior()
-    val materialScroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    LaunchedEffect(title) {
-        miuixScroll.state.heightOffset = 0f
-        miuixScroll.state.contentOffset = 0f
-        materialScroll.state.heightOffset = 0f
-        materialScroll.state.contentOffset = 0f
+    val surface = MiuixTheme.colorScheme.surface
+    val primary = MiuixTheme.colorScheme.primary
+    val tertiary = MiuixTheme.colorScheme.tertiaryContainer
+    val night = LocalNight.current
+    val backdrop = rememberLayerBackdrop {
+        drawRect(surface)
+        drawContent()
     }
-    val heading: @Composable () -> Unit = {
-        val back: @Composable () -> Unit = {
-            if (showBack) IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "返回" }) { AppText("←", 28) }
-        }
-        if (LocalStyle.current == UiStyle.Miuix) MTopAppBar(title = title, navigationIcon = back, scrollBehavior = miuixScroll)
-        else LargeFlexibleTopAppBar(title = { Text(title) }, navigationIcon = back, scrollBehavior = materialScroll,
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface,
-                scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer))
-    }
-    val navigation: @Composable () -> Unit = {
-        if (tab != null) {
-            val home = ImageVector.vectorResource(R.drawable.ic_nav_home)
-            val settings = ImageVector.vectorResource(R.drawable.ic_nav_settings)
-            val entries = listOf("首页" to home, "设置" to settings)
-            if (LocalStyle.current == UiStyle.Miuix) {
-                MFloatingNavigationBar { entries.forEachIndexed { i, (label, icon) ->
-                    Column(Modifier.clickable { onTab(i) }.padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        MFloatingNavigationBarItem(selected = tab == i, onClick = { onTab(i) }, icon = icon, label = label)
-                        MText(label, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
-                    }
-                } }
-            } else {
-                NavigationBar { entries.forEachIndexed { i, (label, icon) ->
-                    NavigationBarItem(selected = tab == i, onClick = { onTab(i) },
-                        icon = { Icon(icon, null) }, label = { Text(label) })
-                } }
+    val pagePadding = PaddingValues()
+    CompositionLocalProvider(LocalBottomBarVisible provides (tab != null)) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawRect(surface)
+                val radius = size.minDimension * 0.44f
+                drawCircle(primary.copy(alpha = if (night) 0.12f else 0.08f), radius,
+                    Offset(size.width * 0.94f, size.height * 0.10f))
+                drawCircle(tertiary.copy(alpha = if (night) 0.15f else 0.10f), radius * 0.76f,
+                    Offset(size.width * 0.02f, size.height * 0.78f))
             }
+            content(pagePadding)
         }
+        GlassHeader(backdrop, title, showBack, onBack, Modifier.align(Alignment.TopCenter))
+        if (tab != null) GlassNavigationBar(backdrop, tab, onTab, Modifier.align(Alignment.BottomCenter))
     }
-    CompositionLocalProvider(LocalPageScroll provides if (LocalStyle.current == UiStyle.Miuix)
-        miuixScroll.nestedScrollConnection else materialScroll.nestedScrollConnection) {
-        if (LocalStyle.current == UiStyle.Miuix) MScaffold(topBar = heading, bottomBar = navigation, content = content)
-        else Scaffold(topBar = heading, bottomBar = navigation, containerColor = MaterialTheme.colorScheme.surface, content = content)
+    }
+}
+
+@Composable
+private fun Modifier.glassSurface(backdrop: Backdrop, shape: Shape, tint: Color): Modifier = drawBackdrop(
+    backdrop = backdrop,
+    shape = { shape },
+    effects = {
+        vibrancy()
+        blur(12f.dp.toPx())
+        if (Build.VERSION.SDK_INT >= 33) lens(9f.dp.toPx(), 16f.dp.toPx())
+    },
+    onDrawSurface = { drawRect(tint); drawRect(Color.White.copy(alpha = 0.28f),
+        style = Stroke(width = 1.dp.toPx())) }
+)
+
+@Composable
+private fun GlassHeader(backdrop: Backdrop, title: String, showBack: Boolean, onBack: () -> Unit,
+                        modifier: Modifier = Modifier) {
+    val surface = MiuixTheme.colorScheme.surface
+    val night = LocalNight.current
+    Row(modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)
+        .height(54.dp).glassSurface(backdrop, ContinuousRoundedRectangle(24.dp),
+            surface.copy(alpha = if (night) 0.72f else 0.66f))
+        .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (showBack) {
+            MButton(onClick = onBack, modifier = Modifier.size(40.dp).semantics { contentDescription = "返回" },
+                minWidth = 40.dp, minHeight = 40.dp, cornerRadius = 20.dp, insideMargin = PaddingValues(0.dp),
+                colors = MButtonDefaults.buttonColors(color = surface.copy(alpha = 0.28f),
+                    contentColor = MiuixTheme.colorScheme.onSurface)) { MText("←", fontSize = 24.sp) }
+            Spacer(Modifier.width(8.dp))
+        }
+        AppText(title, 18, bold = true)
+    }
+}
+
+@Composable
+private fun GlassNavigationBar(backdrop: Backdrop, tab: Int, onTab: (Int) -> Unit,
+                               modifier: Modifier = Modifier) {
+    val night = LocalNight.current
+    Row(modifier.navigationBarsPadding().padding(bottom = 8.dp).widthIn(max = 232.dp).fillMaxWidth()
+        .height(52.dp).glassSurface(backdrop, ContinuousCapsule,
+            MiuixTheme.colorScheme.surface.copy(alpha = if (night) 0.74f else 0.64f))
+        .padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly) {
+        listOf("首页" to R.drawable.ic_nav_home, "设置" to R.drawable.ic_nav_settings)
+            .forEachIndexed { index, (label, drawable) ->
+                val selected = tab == index
+                val tint = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceContainer
+                Column(Modifier.weight(1f).fillMaxHeight().clip(ContinuousCapsule)
+                    .background(if (selected) MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.66f) else Color.Transparent)
+                    .clickable { onTab(index) }, verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    MIcon(imageVector = ImageVector.vectorResource(drawable), contentDescription = label,
+                        modifier = Modifier.size(19.dp), tint = tint)
+                    MText(label, fontSize = 10.sp, color = tint)
+                }
+            }
     }
 }
 
 @Composable
 private fun AppText(value: String, size: Int = 14, muted: Boolean = false, bold: Boolean = false,
                     modifier: Modifier = Modifier, color: Color = if (muted) LocalMuted.current else LocalInk.current) {
-    if (LocalStyle.current == UiStyle.Miuix) MText(value, modifier = modifier, fontSize = size.sp,
+    MText(value, modifier = modifier, fontSize = size.sp,
         color = color, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
-    else Text(value, modifier = modifier, fontSize = size.sp, color = color,
-        style = when { size <= 13 -> MaterialTheme.typography.bodySmall; size <= 16 -> MaterialTheme.typography.bodyMedium
-            else -> MaterialTheme.typography.titleMedium },
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
 }
 
 @Composable
 private fun AppCard(tone: CardTone = CardTone.Normal, padding: Int = 16, content: @Composable ColumnScope.() -> Unit) {
-    val material = MaterialTheme.colorScheme
     val miuix = MiuixTheme.colorScheme
-    val container = if (LocalStyle.current == UiStyle.Miuix) when (tone) {
+    val night = LocalNight.current
+    val container = when (tone) {
         CardTone.Normal -> miuix.surfaceContainer
         CardTone.Ready -> if (LocalNight.current) Color(0xff193d2b) else Color(0xffdff7e7)
         CardTone.Warning -> miuix.errorContainer
-        CardTone.Accent -> miuix.primaryContainer
-    } else when (tone) {
-        CardTone.Normal -> material.surfaceContainerLow
-        CardTone.Ready -> material.secondaryContainer
-        CardTone.Warning -> material.errorContainer
-        CardTone.Accent -> material.primaryContainer
     }
-    val ink = if (LocalStyle.current == UiStyle.Miuix) when (tone) {
+    val ink = when (tone) {
         CardTone.Ready -> if (LocalNight.current) Color(0xffb8e9c7) else Color(0xff18482b)
         CardTone.Warning -> miuix.onErrorContainer
-        CardTone.Accent -> miuix.onPrimaryContainer
         else -> miuix.onSurfaceContainer
-    } else material.contentColorFor(container)
+    }
     CompositionLocalProvider(LocalInk provides ink, LocalMuted provides ink.copy(alpha = 0.7f)) {
-        if (LocalStyle.current == UiStyle.Miuix) MCard(Modifier.fillMaxWidth(), insideMargin = PaddingValues(padding.dp),
+        MCard(Modifier.fillMaxWidth().shadow(if (tone == CardTone.Normal) 1.dp else 0.dp,
+            ContinuousRoundedRectangle(20.dp)).clip(ContinuousRoundedRectangle(20.dp)),
+            cornerRadius = 20.dp, insideMargin = PaddingValues(padding.dp),
             colors = MCardDefaults.defaultColors(color = container, contentColor = ink)) { content() }
-        else Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = container, contentColor = ink)) {
-            Column(Modifier.padding(padding.dp), content = content)
-        }
     }
 }
 
 @Composable
 private fun AppButton(label: String, onClick: () -> Unit, enabled: Boolean = true,
-                      primary: Boolean = true, fullWidth: Boolean = true, modifier: Modifier = Modifier,
-                      swatch: Color? = null) {
+                      primary: Boolean = true, fullWidth: Boolean = true, modifier: Modifier = Modifier) {
     val width = if (fullWidth) Modifier.fillMaxWidth() else Modifier
-    val foreground = if (swatch != null && swatch.luminance() > 0.45f) Color.Black else Color.White
-    if (LocalStyle.current == UiStyle.Miuix) {
-        MButton(onClick = onClick, modifier = modifier.then(width), enabled = enabled,
-            colors = if (swatch != null) MButtonDefaults.buttonColors(color = swatch, contentColor = foreground)
-            else if (primary) MButtonDefaults.buttonColorsPrimary() else MButtonDefaults.buttonColors()) {
+    MButton(onClick = onClick, modifier = modifier.then(width), enabled = enabled,
+            colors = if (primary) MButtonDefaults.buttonColorsPrimary() else MButtonDefaults.buttonColors()) {
             MText(label)
         }
-    } else if (swatch != null) Button(onClick, modifier.then(width), enabled = enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = swatch, contentColor = foreground)) { Text(label) }
-    else if (primary) Button(onClick, modifier.then(width), enabled = enabled) { Text(label) }
-    else OutlinedButton(onClick, modifier.then(width), enabled = enabled) { Text(label) }
 }
 
 @Composable
 private fun AppField(value: String, label: String, onValueChange: (String) -> Unit, number: Boolean = false) {
     val keyboard = KeyboardOptions(keyboardType = if (number) KeyboardType.Decimal else KeyboardType.Ascii, autoCorrectEnabled = false)
-    if (LocalStyle.current == UiStyle.Miuix) MTextField(value = value, onValueChange = onValueChange,
+    MTextField(value = value, onValueChange = onValueChange,
         label = label, singleLine = true, keyboardOptions = keyboard, modifier = Modifier.fillMaxWidth())
-    else OutlinedTextField(value, onValueChange, label = { Text(label) }, singleLine = true,
-        keyboardOptions = keyboard, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
 private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
-    val scroll = LocalPageScroll.current
-    Column(Modifier.fillMaxSize().background(if (LocalStyle.current == UiStyle.Miuix) MiuixTheme.colorScheme.surface
-        else MaterialTheme.colorScheme.surface).then(if (scroll != null) Modifier.nestedScroll(scroll) else Modifier)
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 66.dp
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+        if (LocalBottomBarVisible.current) 68.dp else 20.dp
+    Column(Modifier.fillMaxSize()
         .verticalScroll(rememberScrollState()).imePadding()
-        .padding(if (LocalStyle.current == UiStyle.Miuix) 12.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(if (LocalStyle.current == UiStyle.Miuix) 12.dp else 16.dp), content = content)
+        .padding(start = 12.dp, top = topInset, end = 12.dp, bottom = bottomInset),
+        verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
 }
 
 @Composable
 private fun HomePage(model: ManagerViewModel, onImport: () -> Unit) {
     val status = model.snapshot
     ScreenColumn {
-        AppCard(when { status == null -> CardTone.Normal; status.ready() -> CardTone.Ready
-            else -> CardTone.Warning }, padding = 20) {
-            Box(Modifier.fillMaxWidth().heightIn(min = 132.dp)) {
-                Icon(ImageVector.vectorResource(R.drawable.ic_status_ready), null,
-                    modifier = Modifier.size(110.dp).align(Alignment.CenterEnd), tint = LocalInk.current.copy(alpha = 0.12f))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AppText(model.currentSlot, 27, bold = true)
-                    AppText("v${BuildConfig.VERSION_NAME}", 15, muted = true)
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusChip(if (status?.rootGranted == true) "Root 已授权" else "Root 未授权")
-                        StatusChip(if (status?.gsiToolAvailable == true) "DSU 就绪" else "DSU 未就绪")
-                    }
-                }
-            }
-        }
+        HomeModeCard(model)
         if (model.error.isNotBlank()) AppCard(CardTone.Warning) { AppText(model.error, 13) }
         if (status?.rootGranted != true) AppButton("请求 Root 授权", model::requestRoot, !model.busy)
         AppCard {
@@ -320,7 +345,7 @@ private fun HomePage(model: ManagerViewModel, onImport: () -> Unit) {
             InfoRow("gsi_tool", status?.gsiToolPath?.ifEmpty { "未检测到" } ?: "检测中", R.drawable.ic_nav_settings)
             InfoRow("可用空间", status?.freeBytes?.takeIf { it > 0 }?.let(::formatBytes) ?: "未知", R.drawable.ic_nav_log)
         }
-        AppCard(CardTone.Accent) {
+        AppCard {
             AppText("镜像安装", 17, bold = true)
             AppText("创建新的命名槽位与独立 userdata", 12, muted = true)
             Spacer(Modifier.height(12.dp))
@@ -340,8 +365,7 @@ private fun HomePage(model: ManagerViewModel, onImport: () -> Unit) {
         }
         if (model.installMessage.isNotEmpty()) {
             AppText(model.installMessage, 13)
-            if (LocalStyle.current == UiStyle.Miuix) MProgress(progress = model.installProgress / 100f)
-            else LinearProgressIndicator(progress = { model.installProgress / 100f }, modifier = Modifier.fillMaxWidth())
+            MProgress(progress = model.installProgress / 100f)
         }
         Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             AppText("已安装系统", 19, bold = true, modifier = Modifier.weight(1f))
@@ -372,19 +396,58 @@ private fun HomePage(model: ManagerViewModel, onImport: () -> Unit) {
 }
 
 @Composable
+private fun HomeModeCard(model: ManagerViewModel) {
+    val status = model.snapshot
+    val tone = when { status == null -> CardTone.Normal; status.ready() -> CardTone.Ready; else -> CardTone.Warning }
+    AppCard(tone, padding = 12) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 112.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1.08f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AppText("当前系统", 12, muted = true)
+                AppText(model.currentSlot, 21, bold = true)
+                AppText("${model.deviceLabel} · v${BuildConfig.VERSION_NAME}", 11, muted = true)
+                Spacer(Modifier.height(2.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    StatusChip(if (status?.rootGranted == true) "Root 已授权" else "Root 未授权")
+                    StatusChip(if (status?.gsiToolAvailable == true) "DSU 就绪" else "DSU 未就绪")
+                }
+            }
+            Box(Modifier.width(1.dp).height(88.dp).background(LocalInk.current.copy(alpha = 0.16f)))
+            Column(Modifier.weight(0.92f).padding(start = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                AppText("模式", 12, muted = true)
+                ModeButton(model, ManagerMode.Standard)
+                ModeButton(model, ManagerMode.Compatibility)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(model: ManagerViewModel, mode: ManagerMode) {
+    val selected = model.mode == mode
+    val scheme = MiuixTheme.colorScheme
+    MButton(onClick = { model.updateMode(mode) }, modifier = Modifier.fillMaxWidth().height(34.dp),
+        enabled = !model.busy, minWidth = 0.dp, minHeight = 34.dp, cornerRadius = 17.dp,
+        insideMargin = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        colors = if (selected) MButtonDefaults.buttonColors(color = scheme.primaryContainer,
+            contentColor = scheme.onPrimaryContainer) else MButtonDefaults.buttonColors(
+            color = Color.Transparent, contentColor = scheme.onSurfaceContainer)) {
+        AppText(mode.title, 11, bold = selected,
+            color = if (selected) scheme.onPrimaryContainer else scheme.onSurfaceContainer)
+    }
+}
+
+@Composable
 private fun StatusChip(label: String) {
     val container = LocalInk.current.copy(alpha = 0.08f)
-    if (LocalStyle.current == UiStyle.Miuix) MCard(insideMargin = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+    MCard(insideMargin = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
         cornerRadius = 6.dp, colors = MCardDefaults.defaultColors(container, LocalInk.current)) { AppText(label, 11, bold = true) }
-    else Surface(color = container, shape = MaterialTheme.shapes.small) { AppText(label, 11, bold = true,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
 }
 
 @Composable
 private fun InfoRow(label: String, value: String, icon: Int) {
     Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(ImageVector.vectorResource(icon), null, Modifier.size(23.dp), tint = if (LocalStyle.current == UiStyle.Miuix)
-            MiuixTheme.colorScheme.primary else MaterialTheme.colorScheme.primary)
+        MIcon(imageVector = ImageVector.vectorResource(icon), contentDescription = null, modifier = Modifier.size(23.dp), tint = MiuixTheme.colorScheme.primary)
         Spacer(Modifier.width(14.dp))
         Column {
             AppText(label, 14, bold = true)
@@ -398,21 +461,6 @@ private fun SettingsPage(model: ManagerViewModel, onTheme: () -> Unit, onAbout: 
     ScreenColumn {
         AppText("外观", 13, muted = true, modifier = Modifier.padding(start = 8.dp))
         AppCard(padding = 0) {
-            if (LocalStyle.current == UiStyle.Miuix) OverlayDropdownPreference(title = "界面风格",
-                summary = "当前：Miuix", items = UiStyle.entries.map { it.name }, selectedIndex = model.style.ordinal,
-                onSelectedIndexChange = { model.updateStyle(UiStyle.entries[it]) })
-            else {
-                Column(Modifier.padding(16.dp)) {
-                    Text("界面风格", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(12.dp))
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        UiStyle.entries.forEachIndexed { index, style ->
-                            SegmentedButton(selected = model.style == style, onClick = { model.updateStyle(style) },
-                                shape = SegmentedButtonDefaults.itemShape(index, UiStyle.entries.size)) { Text(style.name) }
-                        }
-                    }
-                }
-            }
             PreferenceItem("主题设置", "颜色模式与自定义主题色", onTheme, R.drawable.ic_nav_settings)
         }
         AppCard {
@@ -442,14 +490,10 @@ private fun PreferenceRow(title: String, summary: String, onClick: () -> Unit) {
 @Composable
 private fun PreferenceItem(title: String, summary: String, onClick: () -> Unit, icon: Int = R.drawable.ic_nav_settings) {
     val leading: @Composable () -> Unit = {
-        Icon(ImageVector.vectorResource(icon), null, Modifier.size(24.dp), tint = if (LocalStyle.current == UiStyle.Miuix)
-            MiuixTheme.colorScheme.primary else MaterialTheme.colorScheme.primary)
+        MIcon(imageVector = ImageVector.vectorResource(icon), contentDescription = null, modifier = Modifier.size(24.dp), tint = MiuixTheme.colorScheme.primary)
     }
-    if (LocalStyle.current == UiStyle.Miuix) ArrowPreference(title = title, summary = summary,
+    ArrowPreference(title = title, summary = summary.takeIf { it.isNotEmpty() },
         startAction = leading, onClick = onClick)
-    else ListItem(supportingContent = { Text(summary) }, leadingContent = leading,
-        trailingContent = { Text("›") }, modifier = Modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)) { Text(title) }
 }
 
 private val accents = listOf(0xfff44336, 0xffe91e63, 0xff9c27b0, 0xff3f51b5, 0xff2196f3,
@@ -463,12 +507,8 @@ private fun ThemePage(model: ManagerViewModel) {
     ScreenColumn {
         AppCard {
             AppText("颜色模式", 17, bold = true)
-            if (LocalStyle.current == UiStyle.Miuix) listOf("跟随系统", "浅色", "深色", "AMOLED").forEachIndexed { i, name ->
+            listOf("跟随系统", "浅色", "深色", "AMOLED").forEachIndexed { i, name ->
                 RadioButtonPreference(title = name, selected = model.themeMode == i, onClick = { model.setTheme(i) })
-            } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("跟随系统", "浅色", "深色", "AMOLED").forEachIndexed { i, name ->
-                    FilterChip(selected = model.themeMode == i, onClick = { model.setTheme(i) }, label = { Text(name) })
-                }
             }
         }
         AppCard {
@@ -483,14 +523,10 @@ private fun ThemePage(model: ManagerViewModel) {
                         Column(Modifier.weight(1f).clickable(onClick = choose).padding(vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             val foreground = if (color.luminance() > 0.45f) Color.Black else Color.White
-                            if (LocalStyle.current == UiStyle.Miuix) MButton(onClick = choose, modifier = Modifier.size(40.dp),
+                            MButton(onClick = choose, modifier = Modifier.size(40.dp),
                                 minWidth = 40.dp, minHeight = 40.dp, cornerRadius = 20.dp, insideMargin = PaddingValues(0.dp),
                                 colors = MButtonDefaults.buttonColors(color = color, contentColor = foreground)) {
                                 if (selected) MText("✓", color = foreground)
-                            }
-                            else FilledIconButton(onClick = choose, modifier = Modifier.size(40.dp),
-                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = color, contentColor = foreground)) {
-                                if (selected) Text("✓", color = foreground)
                             }
                             AppText(accentNames[i], 11, muted = true, modifier = Modifier.padding(top = 4.dp))
                         }
@@ -528,18 +564,20 @@ private fun ImportPage(model: ManagerViewModel, onFiles: () -> Unit, onFolder: (
 }
 
 @Composable
-private fun AboutPage(onOpenUrl: (String) -> Unit, onJoinGroup: () -> Unit) {
+private fun AboutPage(onOpenUrl: (String) -> Unit, onJoinGroup: () -> Unit, onSources: () -> Unit) {
     ScreenColumn {
         Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Image(painterResource(R.drawable.elysia_icon), "Elysia 图标", Modifier.size(108.dp))
             Spacer(Modifier.height(24.dp)); AppText("Elysia 多系统工具箱", 25, bold = true)
             AppText("v${BuildConfig.VERSION_NAME}", 16, muted = true)
-            AppText("Kotlin + Compose · Miuix / Material 3", 12, muted = true)
         }
-        PreferenceRow("在 GitHub 查看源码", "Shlc57/Elysia-DSU-Multi-SystemManager") {
-            onOpenUrl("https://github.com/Shlc57/Elysia-DSU-Multi-SystemManager")
+        AppCard(padding = 0) {
+            PreferenceItem("在 GitHub 查看源码", "", { onOpenUrl("https://github.com/Shlc57/Elysia-DSU-Multi-SystemManager") })
+            MDivider(Modifier.padding(horizontal = 16.dp))
+            PreferenceItem("加入 QQ 群", "", onJoinGroup)
+            MDivider(Modifier.padding(horizontal = 16.dp))
+            PreferenceItem("开源项目", "", onSources)
         }
-        PreferenceRow("加入 QQ 群", "811309060", onJoinGroup)
     }
 }
 
@@ -547,16 +585,85 @@ private fun AboutPage(onOpenUrl: (String) -> Unit, onJoinGroup: () -> Unit) {
 private fun ConfirmationDialog(model: ManagerViewModel) {
     val request = model.confirmation
     val dismiss = { model.confirmation = null }
-    val label = when (request?.action) { "switch" -> "切换并重启"; "return" -> "回主系统"; "delete" -> "删除"; "install" -> "安装"; "info" -> "知道了"; else -> "确认" }
-    if (LocalStyle.current == UiStyle.Miuix) {
-        OverlayDialog(show = request != null, title = request?.title, summary = request?.message, onDismissRequest = dismiss) {
+    val label = when (request?.action) { "switch" -> "切换并重启"; "return" -> "回主系统"; "delete" -> "删除"; "install" -> "安装"; "compatibility-flash" -> "确认刷入"; "compatibility-prepare" -> "仅生成补丁"; "info" -> "知道了"; else -> "确认" }
+    OverlayDialog(show = request != null, title = request?.title, summary = request?.message, onDismissRequest = dismiss) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AppButton("取消", dismiss, primary = false, fullWidth = false, modifier = Modifier.weight(1f))
                 AppButton(label, model::executeConfirmation, fullWidth = false, modifier = Modifier.weight(1f))
             }
+    }
+}
+
+@Composable
+private fun CompatibilityPage(model: ManagerViewModel, onOpenUrl: (String) -> Unit) {
+    LaunchedEffect(Unit) {
+        snapshotFlow { model.busy }.first { !it }
+        model.inspectCompatibility()
+    }
+    val plan = model.compatibilityPlan
+    val options = model.compatibilityOptions
+    ScreenColumn {
+        HomeModeCard(model)
+        AppCard(CardTone.Warning) {
+            AppText("DSU 启动兼容辅助", 17, bold = true)
+            AppText("脚本修补宿主 boot/init_boot，使 DSU 启动时加载模块。它不会改变 Bootloader 的真实锁定状态；不同设备仍需匹配 KMI、模块签名和启动链。", 13)
         }
-    } else if (request != null) AlertDialog(onDismissRequest = dismiss,
-        title = { Text(request.title) }, text = { Text(request.message) },
-        confirmButton = { TextButton(model::executeConfirmation) { Text(label) } },
-        dismissButton = { TextButton(dismiss) { Text("取消") } })
+        AppCard {
+            AppText("环境检查", 17, bold = true)
+            AppText("内核：${plan?.kernel ?: "待检测"}", 12, muted = true)
+            AppText("KMI 世代：${plan?.target?.ifEmpty { "不支持或无法确认" } ?: "待检测"}", 12, muted = true)
+            AppText("引导分区：${plan?.partition?.ifEmpty { "未识别" } ?: "待检测"}", 12, muted = true)
+            AppText("外部启动链与模块签名不能由上述信息自动确认。", 12, muted = true)
+            Spacer(Modifier.height(10.dp))
+            AppButton("重新检查环境", model::inspectCompatibility, !model.busy, false)
+        }
+        AppCard(padding = 0) {
+            SwitchPreference(title = "SELinux 启动期辅助", summary = "仅用于 DSU 启动期，不持续拦截 setenforce",
+                checked = options.selinux, enabled = !model.busy,
+                onCheckedChange = { model.updateCompatibilityOptions(options.copy(selinux = it)) })
+            SwitchPreference(title = "AVB 启动期辅助", summary = "临时调整 first-stage PID 1 读取视图，不签名 vbmeta",
+                checked = options.avb, enabled = !model.busy,
+                onCheckedChange = { model.updateCompatibilityOptions(options.copy(avb = it)) })
+            SwitchPreference(title = "dm-verity 表辅助", summary = "高级选项，默认关闭，依赖 AVB 辅助",
+                checked = options.verity, enabled = !model.busy && options.avb,
+                onCheckedChange = { model.updateCompatibilityOptions(options.copy(verity = it)) })
+        }
+        AppText("已内置脚本：DSU-Permissive v0.7.0 · ${if (model.busy) "校验/操作中" else if (model.verifiedBundle) "SHA-256 校验通过" else "不可用"}", 12, muted = true)
+        AppButton("仅备份并生成补丁", { model.confirmCompatibilityPreparation(false) },
+            !model.busy && model.verifiedBundle && plan?.canPrepare == true)
+        AppButton("备份、生成并刷入引导分区…", { model.confirmCompatibilityPreparation(true) },
+            !model.busy && model.verifiedBundle && plan?.canPrepare == true, false)
+        if (model.compatibilityMessage.isNotEmpty()) AppCard {
+            SelectionContainer { AppText(model.compatibilityMessage, 12) }
+        }
+        PreferenceRow("DSU-Permissive 源码与说明", "", { onOpenUrl(CompatibilityTool.SOURCE) })
+    }
+}
+
+@Composable
+private fun SourcePage(onOpenUrl: (String) -> Unit) {
+    val projects = listOf(
+        Triple("Jetpack Compose", "Apache-2.0", "https://github.com/androidx/androidx"),
+        Triple("Material 3", "Apache-2.0", "https://github.com/androidx/androidx"),
+        Triple("Miuix", "Apache-2.0", "https://github.com/compose-miuix-ui/miuix"),
+        Triple("Capsule", "Apache-2.0", "https://github.com/Kyant0/Capsule"),
+        Triple("AndroidLiquidGlass / Backdrop", "Apache-2.0", "https://github.com/Kyant0/AndroidLiquidGlass"),
+        Triple("KernelSU Manager（界面参考）", "GPL-3.0", "https://github.com/KOWX712/KernelSU"),
+        Triple("Material Icons（源码参考）", "Apache-2.0", "https://github.com/google/material-design-icons"),
+        Triple("KernelSU（UI 参考，未复制源码）", "GPL-3.0", "https://github.com/KOWX712/KernelSU"),
+        Triple("Kotlin Coroutines", "Apache-2.0", "https://github.com/Kotlin/kotlinx.coroutines"),
+        Triple("Kotlin Serialization", "Apache-2.0", "https://github.com/Kotlin/kotlinx.serialization"),
+        Triple("MaterialKolor", "Apache-2.0", "https://github.com/jordond/MaterialKolor"),
+        Triple("OkHttp（本应用未直接依赖）", "Apache-2.0", "https://github.com/square/okhttp"),
+        Triple("DSUManager 镜像解析", "MIT", "https://github.com/XZY-01/DSUManager")
+    )
+    ScreenColumn {
+        AppText("应用依赖与源码参考。标注“未直接依赖”的项目仅提供源码入口。", 13, muted = true)
+        AppCard(padding = 0) {
+            projects.forEachIndexed { index, (name, license, url) ->
+                if (index > 0) MDivider(Modifier.padding(horizontal = 16.dp))
+                PreferenceItem(name, license, { onOpenUrl(url) })
+            }
+        }
+    }
 }

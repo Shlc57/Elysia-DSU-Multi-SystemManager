@@ -3,12 +3,25 @@
 ## Compose UI dependencies
 
 - Miuix 0.9.4 (`miuix-ui-android`, `miuix-preference-android`, `miuix-nav-android` and their dependencies): Apache-2.0, copyright compose-miuix-ui contributors. https://github.com/compose-miuix-ui/miuix
+- Capsule 2.1.3: Apache-2.0, copyright Kyant. https://github.com/Kyant0/Capsule
+- AndroidLiquidGlass Backdrop 1.0.6: Apache-2.0, copyright Kyant. https://github.com/Kyant0/AndroidLiquidGlass
 - AndroidX Jetpack Compose / Material 3 / Activity / Lifecycle: Apache-2.0, Android Open Source Project. https://developer.android.com/jetpack/androidx
 - Kotlin and kotlinx.serialization: Apache-2.0, JetBrains and contributors. https://github.com/JetBrains/kotlin
 - MaterialKolor / Material Color Utilities (theme palette generation): Apache-2.0. https://github.com/jordond/MaterialKolor and https://github.com/material-foundation/material-color-utilities
 
 These libraries are used as Gradle dependencies. KernelSU manager source is not copied into this app.
 Apache-2.0 license: https://www.apache.org/licenses/LICENSE-2.0
+
+## Bundled DSU-Permissive tool
+
+The APK includes the user-provided `dsu-permissive-android-flasher-v0.7.0.sh` unchanged as an asset.
+Its SHA-256 is pinned in the wrapper and checked before use. The bundle embeds loader/kernel-module
+components marked GPL-2.0-only and a Magisk `magiskboot` binary under GPL-3.0; corresponding license
+texts are included in this repository and in the APK license assets. Source is available at the upstream projects below.
+Source and limitations: https://github.com/yangFenTuoZi/DSU-Permissive
+Magisk source: https://github.com/topjohnwu/Magisk
+Flashing uses the bundle's explicit `--flash` path only after a separate in-app confirmation. The
+manager does not reboot the device.
 
 ## XZY-01/DSUManager
 
